@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Fun Anime/Comic Battle App</title>
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.2/dist/confetti.browser.min.js"></script>
+  <style>
+    body { font-family: Arial; background: #f0f8ff; }
+    #battle-log { height: 300px; overflow-y: scroll; border: 1px solid #ccc; padding: 10px; background: #fff; }
+    img { max-width: 150px; border-radius: 8px; }
+    button { padding: 8px 16px; margin: 5px; background: #4caf50; color: white; border: none; cursor: pointer; }
+    button:disabled { background: #ccc; }
+    #players { display: flex; justify-content: space-around; }
+    .player { text-align: center; }
+    footer { margin-top: 20px; text-align: center; font-size: 12px; color: #666; }
+  </style>
+</head>
+<body>
+  <h1>Fun Anime/Comic Book Battles 🎮</h1>
+  
+  <input id="roomId" placeholder="Room ID (e.g., battle1)">
+  <button onclick="joinRoom()">Join Room</button>
+  
+  <div id="players"></div>
+  
+  <h2>Search Character</h2>
+  <input id="searchQuery" placeholder="Character name (e.g., Goku or Batman)">
+  <button onclick="searchCharacters('anime')">Search Anime</button>
+  <button onclick="searchCharacters('comic')">Search Comic</button>
+  <div id="searchResults" style="display: flex; flex-wrap: wrap;"></div>
+  
+  <div id="battle" style="display: none;">
+    <h2>Epic Battle! ⚔️</h2>
+    <div id="battle-status" style="font-weight: bold; margin: 10px 0;"></div>
+    <button id="basicAttackBtn" onclick="attack('basic')" disabled>Basic Attack</button>
+    <button id="specialAttackBtn" onclick="attack('special')" disabled>Special Attack</button>
+    <button onclick="restartBattle()">Restart Battle</button>
+    <div id="battle-log"></div>
+  </div>
+  
+  <footer>Created with love by Skye &lt;3</footer>
+  
+  <script>
+    const socket = io();  // Relative path for deployment
+    
+    let currentRoom = null;
+    
+    function joinRoom() {
+      currentRoom = document.getElementById('roomId').value;
+      socket.emit('joinRoom', currentRoom);
+    }
+    
+    function searchCharacters(type) {
+      const query = document.getElementById('searchQuery').value;
+      const event = type === 'anime' ? 'searchAnimeCharacter' : 'searchComicCharacter';
+      socket.emit(event, query, (results) => {
+        const resultsDiv = document.getElementById('searchResults');
+        resultsDiv.innerHTML = '';
+        results.forEach(char => {
+          const container = document.createElement('div');
+          container.style.margin = '10px';
+          const img = document.createElement('img');
+          img.src = char.image;
+          const btn = document.createElement('button');
+          btn.innerText = `Select ${char.name}`;
+          btn.onclick = () => selectCharacter(char);
+          container.appendChild(img);
+          container.appendChild(btn);
+          resultsDiv.appendChild(container);
+        });
+      });
+    }
+    
+    function selectCharacter(char) {
+      socket.emit('selectCharacter', currentRoom, char);
+    }
+    
+    function attack(type) {
+      socket.emit('attack', currentRoom, type);
+    }
+    
+    function restartBattle() {
+      socket.emit('restartBattle', currentRoom);
+    }
+    
+    socket.on('message', (msg) => alert(msg));
+    
+    socket.on('updatePlayers', (players) => {
+      const playersDiv = document.getElementById('players');
+      playersDiv.innerHTML = '<h3>Players Ready:</h3>';
+      players.forEach(p => {
+        const div = document.createElement('div');
+        div.className = 'player';
+        div.innerHTML = `<strong>${p.id}</strong><br>${p.character ? p.character.name : 'Selecting...'}`;
+        if (p.character?.image) {
+          const img = document.createElement('img');
+          img.src = p.character.image;
+          div.appendChild(img);
+        }
+        playersDiv.appendChild(div);
+      });
+    });
+    
+    socket.on('startBattle', (state) => {
+      document.getElementById('battle').style.display = 'block';
+      updateBattle(state);
+    });
+    
+    socket.on('updateBattle', updateBattle);
+    
+    function updateBattle(state) {
+      const opponentId = Object.keys(state.hp).find(id => id !== socket.id);
+      const status = document.getElementById('battle-status');
+      status.innerHTML = `Turn: ${state.turn === socket.id ? 'Your turn!' : 'Opponent\'s turn'}<br>Your HP: ${state.hp[socket.id]}<br>Opponent HP: ${state.hp[opponentId]}`;
+      
+      const log = document.getElementById('battle-log');
+      const newEntries = state.logs.slice(log.children.length); // Only add new
+      newEntries.forEach(entry => {
+        if (typeof entry === 'string') {
+          log.innerHTML += `<p>${entry}</p>`;
+        } else if (entry.animation) {
+          const img = document.createElement('img');
+          img.src = entry.animation;
+          log.appendChild(img);
+        }
+      });
+      log.scrollTop = log.scrollHeight;
+      
+      document.getElementById('basicAttackBtn').disabled = state.turn !== socket.id;
+      document.getElementById('specialAttackBtn').disabled = state.turn !== socket.id;
+    }
+    
+    socket.on('battleEnd', (msg) => {
+      alert(msg);
+      confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
+      document.getElementById('basicAttackBtn').disabled = true;
+      document.getElementById('specialAttackBtn').disabled = true;
+    });
+    
+    socket.on('restart', () => {
+      document.getElementById('battle-log').innerHTML = '';
+      document.getElementById('battle-status').innerHTML = '';
+      document.getElementById('basicAttackBtn').disabled = true;
+      document.getElementById('specialAttackBtn').disabled = true;
+      document.getElementById('searchResults').innerHTML = '';
+      document.getElementById('battle').style.display = 'none';
+    });
+  </script>
+</body>
+</html>
